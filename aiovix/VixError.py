@@ -1,7 +1,4 @@
-from __future__ import absolute_import
-
-from .compat import _str
-from vix import _backend, API_ENCODING
+from aiovix import _backend, API_ENCODING
 vix = _backend._vix
 ffi = _backend._ffi
 
@@ -32,7 +29,7 @@ class VixError(Exception):
     VIX_E_BUFFER_TOOSMALL = 24
     VIX_E_OBJECT_NOT_FOUND = 25
     VIX_E_HOST_NOT_CONNECTED = 26
-    VIX_E_INVALID_UTF8_STRING = 27
+    VIX_E_INVALID_UTF8STRING = 27
     VIX_E_OPERATION_ALREADY_IN_PROGRESS = 31
     VIX_E_UNFINISHED_JOB = 29
     VIX_E_NEED_KEY = 30
@@ -319,7 +316,7 @@ class VixError(Exception):
     def __init__(self, error_code):
         self._error = error_code
 
-    def __str__(self):
+    def _str__(self):
         return "VixError #{0}: {1}".format(str(self._error), self.get_error_text() or "?")
 
     def get_error_text(self):
@@ -329,7 +326,7 @@ class VixError(Exception):
         :rtype: str
         """
 
-        return _str(
+        return str(
             ffi.string(
                 vix.Vix_GetErrorText(
                     ffi.cast('VixError', self._error), 

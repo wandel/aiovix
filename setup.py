@@ -1,26 +1,23 @@
 import os
-import re
-from setuptools import setup
+import setuptools
+
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 with open(os.path.join(BASE_DIR, 'README.rst'), 'rt') as fd:
     long_description = fd.read()
 
-with open(os.path.join(BASE_DIR, 'vix', '__init__.py'), 'rt') as fd:
-    version = re.search(r'__version__\W*=\W*(\'|")(.+?)(\'|")', fd.read()).group(2)
-
-setup(
-    name='vix',
-    version=version,
+setuptools.setup(
+    name='aiovix',
+    version='0.1.0',
     description='VMware VIX binding for Python (unofficial)',
     long_description=long_description,
     author='Naim A.',
     author_email='naim94a@gmail.com',
-    url='https://github.com/naim94a/vix',
-    packages=['vix'],
+    url='https://github.com/naim94a/aiovix',
+    packages=['aiovix'],
     package_dir={
-        'vix': 'vix',
+        'aiovix': 'aiovix',
     },
     license='GPLv3',
     classifiers=[
@@ -39,8 +36,7 @@ setup(
         'Topic :: System :: Systems Administration',
     ],
     install_requires=[
-        'cffi>=1.15',
-        'six',
+        'cffi>=1.15'
     ],
     keywords='vmware python api vix',
     project_urls={

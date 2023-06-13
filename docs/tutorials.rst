@@ -42,7 +42,7 @@ Cloning machines are usually a more useful action then capturing screenshots. It
 
     # This clone will be based of 'template.vmx' at the specified snapshot.
     # Linked snapshots take less space...
-    cloned = vm.clone('/path/to/my/cloned/vm.vmx', snapshot=snapshot, linked=True)
+    cloned = await vm.clone('/path/to/my/cloned/vm.vmx', snapshot=snapshot, linked=True)
 
     # Let fire up our cloned machine!
-    cloned.power_on()
+    await cloned.power_on()

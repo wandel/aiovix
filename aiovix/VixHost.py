@@ -1,22 +1,14 @@
-from __future__ import absolute_import
-
-import collections
-try:
-    # warns as of 3.3 and errors in 3.10
-    collections_abc = collections.abc
-except AttributeError:  # python <3.3
-    collections_abc = collections
-
-import platform
 import os
 import os.path
+import platform
+import collections
 from xml.etree import ElementTree
-from .compat import _bytes, _str
+
 from .VixJob import VixJob
 from .VixVM import VixVM
 from .VixHandle import VixHandle
 from .VixError import VixError
-from vix import _backend, API_ENCODING
+from aiovix import _backend, API_ENCODING
 vix = _backend._vix
 ffi = _backend._ffi
 
@@ -47,7 +39,7 @@ def _find_items_callback(job_handle, event_type, event_info, client_data):
     if error_code != VixError.VIX_OK:
         return
 
-    vmx = _str(ffi.string(str_ptr[0]), API_ENCODING)
+    vmx = str(ffi.string(str_ptr[0]), API_ENCODING)
 
     _find_results[idx].append(vmx)
     vix.Vix_FreeBuffer(str_ptr[0])
@@ -103,7 +95,7 @@ class VixHost(object):
         assert self._handle == None, 'Instance is already connected.'
 
         if service_provider in (self.VIX_SERVICEPROVIDER_VMWARE_VI_SERVER, self.VIX_SERVICEPROVIDER_VMWARE_WORKSTATION_SHARED):
-            if isinstance(host, collections_abc.Sequence) and len(host) == 2 and host[1] != 0:
+            if isinstance(host, collections.abc.Sequence) and len(host) == 2 and host[1] != 0:
                 host = ('%s:%s' % host, 0)
 
             elif host is None and service_provider == self.VIX_SERVICEPROVIDER_VMWARE_WORKSTATION_SHARED:
@@ -116,7 +108,7 @@ class VixHost(object):
 
                 host = ('localhost:%d' % (int(ElementTree.parse(vmhostd_proxy_xml).getroot().find('httpsPort').text), ), 0)
 
-            assert credentials is not None and isinstance(credentials, collections_abc.Sequence) and len(credentials) == 2 \
+            assert credentials is not None and isinstance(credentials, collections.abc.Sequence) and len(credentials) == 2 \
                    and credentials[0] is not None and credentials[1] is not None, \
                    'Null credentials blocks vix api.'
 
@@ -125,16 +117,16 @@ class VixHost(object):
         if not credentials:
             credentials = (None, None, )
 
-        assert isinstance(host, collections_abc.Sequence) and len(host) == 2, 'Host must be a tuple of size 2'
-        assert isinstance(credentials, collections_abc.Sequence) and len(credentials) == 2, 'Credentials must be a tuple of size 2'
+        assert isinstance(host, collections.abc.Sequence) and len(host) == 2, 'Host must be a tuple of size 2'
+        assert isinstance(credentials, collections.abc.Sequence) and len(credentials) == 2, 'Credentials must be a tuple of size 2'
 
         job = vix.VixHost_Connect(
             self._VIX_API_VERSION,
             service_provider,
-            ffi.from_buffer(_bytes(host[0], API_ENCODING)) if host[0] else ffi.cast('const char*', 0),
+            ffi.from_buffer(bytes(host[0], API_ENCODING)) if host[0] else ffi.cast('const char*', 0),
             host[1],
-            ffi.from_buffer(_bytes(credentials[0], API_ENCODING)) if credentials[0] is not None else ffi.cast('const char*', 0),
-            ffi.from_buffer(_bytes(credentials[1], API_ENCODING)) if credentials[1] is not None else ffi.cast('const char*', 0),
+            ffi.from_buffer(bytes(credentials[0], API_ENCODING)) if credentials[0] is not None else ffi.cast('const char*', 0),
+            ffi.from_buffer(bytes(credentials[1], API_ENCODING)) if credentials[1] is not None else ffi.cast('const char*', 0),
             0,
             0,
             ffi.cast('VixEventProc*', 0),
@@ -174,7 +166,7 @@ class VixHost(object):
 
         job = VixJob(vix.VixHost_RegisterVM(
             self._handle,
-            ffi.cast('const char*', _bytes(vmx_path, API_ENCODING)),
+            ffi.cast('const char*', bytes(vmx_path, API_ENCODING)),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         ))
@@ -194,7 +186,7 @@ class VixHost(object):
 
         job = VixJob(vix.VixHost_UnregisterVM(
             self._handle,
-            ffi.cast('const char*', _bytes(vmx_path, API_ENCODING)),
+            ffi.cast('const char*', bytes(vmx_path, API_ENCODING)),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         ))
@@ -216,7 +208,7 @@ class VixHost(object):
 
         job = VixJob(vix.VixHost_OpenVM(
             self._handle,
-            ffi.new('char[]', _bytes(vmx_path, API_ENCODING)),
+            ffi.new('char[]', bytes(vmx_path, API_ENCODING)),
             ffi.cast('VixVMOpenOptions', 0),
             ffi.cast('VixHandle', 0),
             ffi.cast('VixEventProc*', 0),

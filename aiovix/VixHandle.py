@@ -1,7 +1,4 @@
-from __future__ import absolute_import
-
-from vix import _backend, VixError, API_ENCODING
-from .compat import _str, _bytes
+from aiovix import _backend, VixError, API_ENCODING
 vix = _backend._vix
 ffi = _backend._ffi
 
@@ -25,7 +22,7 @@ class VixHandle(object):
 
     VIX_PROPERTYTYPE_ANY = 0
     VIX_PROPERTYTYPE_INTEGER = 1
-    VIX_PROPERTYTYPE_STRING = 2
+    VIX_PROPERTYTYPESTRING = 2
     VIX_PROPERTYTYPE_BOOL = 3
     VIX_PROPERTYTYPE_HANDLE = 4
     VIX_PROPERTYTYPE_INT64 = 5
@@ -95,7 +92,7 @@ class VixHandle(object):
             prop_type = self.get_property_type(arg)
 
             alloc = None
-            if prop_type in (self.VIX_PROPERTYTYPE_STRING, self.VIX_PROPERTYTYPE_BLOB):
+            if prop_type in (self.VIX_PROPERTYTYPESTRING, self.VIX_PROPERTYTYPE_BLOB):
                 alloc = ffi.new('char**')
             elif prop_type == self.VIX_PROPERTYTYPE_INT64:
                 alloc = ffi.new('int64*')
@@ -119,8 +116,8 @@ class VixHandle(object):
 
             if val_type in (self.VIX_PROPERTYTYPE_INT64, self.VIX_PROPERTYTYPE_INTEGER, self.VIX_PROPERTYTYPE_HANDLE):
                 results.append(int(val[0]))
-            elif val_type == self.VIX_PROPERTYTYPE_STRING:
-                results.append(_str(ffi.string(val[0]), API_ENCODING))
+            elif val_type == self.VIX_PROPERTYTYPESTRING:
+                results.append(str(ffi.string(val[0]), API_ENCODING))
             elif val_type == self.VIX_PROPERTYTYPE_BOOL:
                 results.append(bool(val[0]))
             else:

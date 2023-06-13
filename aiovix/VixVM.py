@@ -1,13 +1,12 @@
-from __future__ import absolute_import
+import asyncio
+import collections
 from multiprocessing import Event
 
-from .compat import _bytes, _str
 from .VixError import VixError
 from .VixHandle import VixHandle
 from .VixSnapshot import VixSnapshot
 from .VixJob import VixJob
-from collections import namedtuple
-from vix import _backend, API_ENCODING
+from aiovix import _backend, API_ENCODING
 vix = _backend._vix
 ffi = _backend._ffi
 
@@ -22,10 +21,10 @@ def _blocking_job(f):
 
     return decorator
 
-DirectoryListEntry = namedtuple('DirectoryListEntry', 'name size is_dir is_sym last_mod')
-ProcessListEntry = namedtuple('ProcessListEntry', 'name pid owner cmd is_debug start_time')
-SharedFolder = namedtuple('SharedFolder', 'name host_path write_access')
-Process = namedtuple('Process', 'pid exit_code elapsed_time')
+DirectoryListEntry = collections.namedtuple('DirectoryListEntry', 'name size is_dir is_sym last_mod')
+ProcessListEntry = collections.namedtuple('ProcessListEntry', 'name pid owner cmd is_debug start_time')
+SharedFolder = collections.namedtuple('SharedFolder', 'name host_path write_access')
+Process = collections.namedtuple('Process', 'pid exit_code elapsed_time')
 
 from threading import Event, Lock
 _proc_jobs_lock = Lock()
@@ -63,6 +62,10 @@ class _ProcJob():
 
     def wait(self):
         self._done_evt.wait()
+    
+    async def wait(self):
+        coro = asyncio.to_thread(self.wait)
+        await asyncio.create_task(coro)
 
 
 class VixVM(VixHandle):
@@ -220,14 +223,13 @@ class VixVM(VixHandle):
         return "<VixVM @ {0}>".format(self.vmx_path)
 
     # Power
-    @_blocking_job
-    def pause(self):
+    async def pause(self):
         """Pauses the Virtual machine.
 
         .. note:: This method is not supported by all VMware products.
         """
 
-        return vix.VixVM_Pause(
+        job = vix.VixVM_Pause(
             self._handle,
             ffi.cast('int', 0),
             ffi.cast('VixHandle', 0),
@@ -235,8 +237,9 @@ class VixVM(VixHandle):
             ffi.cast('void*', 0),
         )
 
-    @_blocking_job
-    def power_off(self, from_guest=False):
+        return await VixJob(job).wait_async()
+
+    async def power_off(self, from_guest=False):
         """Powers off a VM.
 
         :param bool from_guest: True to initiate from guest, otherwise False.
@@ -244,15 +247,16 @@ class VixVM(VixHandle):
         :raises vix.VixError: On failure to power off VM.
         """
 
-        return vix.VixVM_PowerOff(
+        job = vix.VixVM_PowerOff(
             self._handle,
             ffi.cast('VixVMPowerOpOptions', self.VIX_VMPOWEROP_FROM_GUEST if from_guest else self.VIX_VMPOWEROP_NORMAL),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
 
-    @_blocking_job
-    def power_on(self, launch_gui=False):
+        return await VixJob(job).wait_async()
+
+    async def power_on(self, launch_gui=False):
         """Powers on a VM.
 
         :param bool launch_gui: True to launch GUI, otherwise False.
@@ -260,7 +264,7 @@ class VixVM(VixHandle):
         :raises vix.VixError: On failure to power on VM.
         """
 
-        return vix.VixVM_PowerOn(
+        job = vix.VixVM_PowerOn(
             self._handle,
             ffi.cast('VixVMPowerOpOptions', self.VIX_VMPOWEROP_LAUNCH_GUI if launch_gui else self.VIX_VMPOWEROP_NORMAL),
             ffi.cast('VixHandle', 0),
@@ -268,8 +272,9 @@ class VixVM(VixHandle):
             ffi.cast('void*', 0),
         )
 
-    @_blocking_job
-    def reset(self, from_guest=False):
+        return await VixJob(job).wait_async()
+
+    async def reset(self, from_guest=False):
         """Resets a virtual machine.
 
         :param bool from_guest: True to initiate from guest, otherwise False.
@@ -277,29 +282,31 @@ class VixVM(VixHandle):
         :raises vix.VixError: On failure to reset VM.
         """
 
-        return vix.VixVM_Reset(
+        job = vix.VixVM_Reset(
             self._handle,
             ffi.cast('VixVMPowerOpOptions', self.VIX_VMPOWEROP_FROM_GUEST if from_guest else self.VIX_VMPOWEROP_NORMAL),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
+        
+        return await VixJob(job).wait_async()
 
-    @_blocking_job
-    def suspend(self):
+    async def suspend(self):
         """Suspends a virtual machine.
 
         :raises vix.VixError: On failure to suspend VM.
         """
 
-        return vix.VixVM_Suspend(
+        job = vix.VixVM_Suspend(
             self._handle,
             ffi.cast('VixVMPowerOpOptions', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
 
-    @_blocking_job
-    def unpause(self):
+        return await VixJob(job).wait_async()
+
+    async def unpause(self):
         """Resumes execution of a paused virtual machine.
 
         :raises vix.VixError: On failure to unpause VM.
@@ -307,16 +314,18 @@ class VixVM(VixHandle):
         .. note:: This method is not supported by all Vmware products.
         """
 
-        return vix.VixVM_Unpause(
+        job = vix.VixVM_Unpause(
             self._handle,
             ffi.cast('int', 0),
             ffi.cast('VixHandle', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
+        
+        return await VixJob(job).wait_async()
 
     # Snapshots
-    def clone(self, dest_vmx, snapshot=None, linked=False):
+    async def clone(self, dest_vmx, snapshot=None, linked=False):
         """Clones the VM to a specified location.
 
         :param str dest_vms: The clone will be stored here.
@@ -331,20 +340,21 @@ class VixVM(VixHandle):
         .. note:: This method is not supported by all VMware products.
         """
 
-        job = VixJob(vix.VixVM_Clone(
+        job = vix.VixVM_Clone(
             self._handle,
             ffi.cast('VixHandle', snapshot._handle if snapshot else 0),
             ffi.cast('VixCloneType', self._VIX_CLONETYPE_LINKED if linked else self._VIX_CLONETYPE_FULL),
-            ffi.new('char[]', _bytes(dest_vmx, API_ENCODING)),
+            ffi.new('char[]', bytes(dest_vmx, API_ENCODING)),
             ffi.cast('int', 0),
             ffi.cast('VixHandle', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
-        ))
+        )
+    
+        handle = await VixJob(job).wait_async(VixJob.VIX_PROPERTY_JOB_RESULT_HANDLE)
+        return VixVM(handle)
 
-        return VixVM(job.wait(VixJob.VIX_PROPERTY_JOB_RESULT_HANDLE))
-
-    def create_snapshot(self, name=None, description=None, include_memory=True):
+    async def create_snapshot(self, name=None, description=None, include_memory=True):
         """Create a VM snapshot.
 
         :param str name: Name of snapshot.
@@ -359,17 +369,18 @@ class VixVM(VixHandle):
         .. note:: This method is not supported by all VMware products.
         """
 
-        job = VixJob(vix.VixVM_CreateSnapshot(
+        job = vix.VixVM_CreateSnapshot(
             self._handle,
-            ffi.new('char[]', _bytes(name, API_ENCODING)) if name else ffi.cast('char*', 0),
-            ffi.new('char[]', _bytes(description, API_ENCODING)) if description else  ffi.cast('char*', 0),
+            ffi.new('char[]', bytes(name, API_ENCODING)) if name else ffi.cast('char*', 0),
+            ffi.new('char[]', bytes(description, API_ENCODING)) if description else  ffi.cast('char*', 0),
             ffi.cast('int', self._VIX_SNAPSHOT_INCLUDE_MEMORY if include_memory else 0),
             ffi.cast('VixHandle', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
-        ))
+        )
 
-        return VixSnapshot(job.wait(VixJob.VIX_PROPERTY_JOB_RESULT_HANDLE))
+        handle = await VixJob(job).wait_async(VixJob.VIX_PROPERTY_JOB_RESULT_HANDLE)
+        return VixSnapshot(handle)
 
     def snapshot_get_current(self):
         """Gets the VMs current active snapshot.
@@ -409,7 +420,7 @@ class VixVM(VixHandle):
         snapshot_handle = ffi.new('VixHandle*')
         error_code = vix.VixVM_GetNamedSnapshot(
             self._handle,
-            ffi.new('char[]', _bytes(name, API_ENCODING)),
+            ffi.new('char[]', bytes(name, API_ENCODING)),
             snapshot_handle,
         )
 
@@ -465,8 +476,7 @@ class VixVM(VixHandle):
 
         return VixSnapshot(snapshot_handle[0])
 
-    @_blocking_job
-    def snapshot_revert(self, snapshot, options=0):
+    async def snapshot_revert(self, snapshot, options=0):
         """Revet VM state to specified snapshot.
 
         :param .VixSnapshot snapshot: The snapshot to revert to.
@@ -477,7 +487,7 @@ class VixVM(VixHandle):
         .. note:: This method is not supported by all VMware products.
         """
 
-        return vix.VixVM_RevertToSnapshot(
+        job = vix.VixVM_RevertToSnapshot(
             self._handle,
             snapshot._handle,
             ffi.cast('int', options),
@@ -485,9 +495,10 @@ class VixVM(VixHandle):
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
+        
+        return await VixJob(job).wait_async()
 
-    @_blocking_job
-    def snapshot_remove(self, snapshot, remove_children=False):
+    async def snapshot_remove(self, snapshot, remove_children=False):
         """Removed specified snapshot from VM.
 
         :param .VixSnapshot snapshot: The snapshot to remove.
@@ -498,17 +509,18 @@ class VixVM(VixHandle):
         .. note:: This method is not supported by all VMware products.
         """
 
-        return vix.VixVM_RemoveSnapshot(
+        job = vix.VixVM_RemoveSnapshot(
             self._handle,
             snapshot._handle,
             ffi.cast('int', self._VIX_SNAPSHOT_REMOVE_CHILDREN if remove_children else 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
+        
+        return await VixJob(job).wait_async()
 
     # Guest & Host file mgmt.
-    @_blocking_job
-    def copy_guest_to_host(self, guest_path, host_path):
+    async def copy_guest_to_host(self, guest_path, host_path):
         """Copies a file or directory from the VM to host.
 
         :param str guest_path: Path to copy from on guest.
@@ -517,18 +529,19 @@ class VixVM(VixHandle):
         :raises vix.VixError: If copy failed.
         """
 
-        return vix.VixVM_CopyFileFromGuestToHost(
+        job = vix.VixVM_CopyFileFromGuestToHost(
             self._handle,
-            ffi.new('char[]', _bytes(guest_path, API_ENCODING)),
-            ffi.new('char[]', _bytes(host_path, API_ENCODING)),
+            ffi.new('char[]', bytes(guest_path, API_ENCODING)),
+            ffi.new('char[]', bytes(host_path, API_ENCODING)),
             ffi.cast('int', 0),
             ffi.cast('VixHandle', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
+        
+        return await VixJob(job).wait_async()
 
-    @_blocking_job
-    def copy_host_to_guest(self, host_path, guest_path):
+    async def copy_host_to_guest(self, host_path, guest_path):
         """Copies a file or directory from host to VM.
 
         :param str host_path: Path to copy from on host.
@@ -537,15 +550,17 @@ class VixVM(VixHandle):
         :raises vix.VixError: If failed to copy.
         """
 
-        return vix.VixVM_CopyFileFromHostToGuest(
+        job = vix.VixVM_CopyFileFromHostToGuest(
             self._handle,
-            ffi.new('char[]', _bytes(host_path, API_ENCODING)),
-            ffi.new('char[]', _bytes(guest_path, API_ENCODING)),
+            ffi.new('char[]', bytes(host_path, API_ENCODING)),
+            ffi.new('char[]', bytes(guest_path, API_ENCODING)),
             ffi.cast('int', 0),
             ffi.cast('VixHandle', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
+        
+        return await VixJob(job).wait_async()
 
     @_blocking_job
     def create_directory(self, path):
@@ -560,7 +575,7 @@ class VixVM(VixHandle):
 
         return vix.VixVM_CreateDirectoryInGuest(
             self._handle,
-            ffi.new('char[]', _bytes(path, API_ENCODING)),
+            ffi.new('char[]', bytes(path, API_ENCODING)),
             ffi.cast('VixHandle', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
@@ -601,8 +616,8 @@ class VixVM(VixHandle):
 
         return vix.VixVM_RenameFileInGuest(
             self._handle,
-            ffi.new('char[]', _bytes(old_name, API_ENCODING)),
-            ffi.new('char[]', _bytes(new_name, API_ENCODING)),
+            ffi.new('char[]', bytes(old_name, API_ENCODING)),
+            ffi.new('char[]', bytes(new_name, API_ENCODING)),
             ffi.cast('int', 0),
             ffi.cast('VixHandle', 0),
             ffi.cast('VixEventProc*', 0),
@@ -622,7 +637,7 @@ class VixVM(VixHandle):
 
         return vix.VixVM_DeleteDirectoryInGuest(
             self._handle,
-            ffi.new('char[]', _bytes(path, API_ENCODING)),
+            ffi.new('char[]', bytes(path, API_ENCODING)),
             ffi.cast('int', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
@@ -641,7 +656,7 @@ class VixVM(VixHandle):
 
         return vix.VixVM_DeleteFileInGuest(
             self._handle,
-            ffi.new('char[]', _bytes(path, API_ENCODING)),
+            ffi.new('char[]', bytes(path, API_ENCODING)),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
@@ -661,7 +676,7 @@ class VixVM(VixHandle):
 
         job = VixJob(vix.VixVM_DirectoryExistsInGuest(
             self._handle,
-            ffi.new('char[]', _bytes(path, API_ENCODING)),
+            ffi.new('char[]', bytes(path, API_ENCODING)),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         ))
@@ -683,7 +698,7 @@ class VixVM(VixHandle):
 
         job = VixJob(vix.VixVM_FileExistsInGuest(
             self._handle,
-            ffi.new('char[]', _bytes(path, API_ENCODING)),
+            ffi.new('char[]', bytes(path, API_ENCODING)),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         ))
@@ -705,7 +720,7 @@ class VixVM(VixHandle):
 
         job = VixJob(vix.VixVM_GetFileInfoInGuest(
             self._handle,
-            ffi.new('char[]', _bytes(path, API_ENCODING)),
+            ffi.new('char[]', bytes(path, API_ENCODING)),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         ))
@@ -739,7 +754,7 @@ class VixVM(VixHandle):
 
         job = VixJob(vix.VixVM_ListDirectoryInGuest(
             self._handle,
-            ffi.new('char[]', _bytes(path, API_ENCODING)),
+            ffi.new('char[]', bytes(path, API_ENCODING)),
             ffi.cast('int', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
@@ -767,8 +782,7 @@ class VixVM(VixHandle):
         return result
 
     # Guest execution
-    @_blocking_job
-    def proc_kill(self, pid):
+    async def proc_kill(self, pid):
         """Kills a process in guest VM.
 
         :param int pid: PID of process in guest to kill.
@@ -778,13 +792,15 @@ class VixVM(VixHandle):
         .. note:: This method is not supported by all VMware products.
         """
 
-        return vix.VixVM_KillProcessInGuest(
+        job = vix.VixVM_KillProcessInGuest(
             self._handle,
             ffi.cast('uint64', pid),
             ffi.cast('int', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
+        
+        return await VixJob(job).wait_async()
 
     def proc_list(self):
         """Gets the guest's process list.
@@ -822,8 +838,7 @@ class VixVM(VixHandle):
             VixJob.VIX_PROPERTY_JOB_RESULT_PROCESS_START_TIME,
         )]
 
-    @_blocking_job
-    def login(self, username, password, require_interactive=False):
+    async def login(self, username, password, require_interactive=False):
         """Login to the guest to allow further executions.
 
         :param str username: Guest Login username.
@@ -833,17 +848,18 @@ class VixVM(VixHandle):
         :raises vix.VixError: On failure to authenticate.
         """
 
-        return vix.VixVM_LoginInGuest(
+        job = vix.VixVM_LoginInGuest(
             self._handle,
-            ffi.new('char[]', _bytes(username, API_ENCODING)) if username else ffi.cast('char*', 0),
-            ffi.new('char[]', _bytes(password, API_ENCODING)) if password else ffi.cast('char*', 0),
+            ffi.new('char[]', bytes(username, API_ENCODING)) if username else ffi.cast('char*', 0),
+            ffi.new('char[]', bytes(password, API_ENCODING)) if password else ffi.cast('char*', 0),
             ffi.cast('int', self._VIX_LOGIN_IN_GUEST_REQUIRE_INTERACTIVE_ENVIRONMENT if require_interactive else 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
+        
+        return await VixJob(job).wait_async()
 
-    @_blocking_job
-    def logout(self):
+    async def logout(self):
         """Logout from guest. Closes any previous login context.
 
         :raises vix.VixError: If failed to logout.
@@ -851,13 +867,15 @@ class VixVM(VixHandle):
         .. note:: This method is not supported by all VMware products.
         """
 
-        return vix.VixVM_LogoutFromGuest(
+        job = vix.VixVM_LogoutFromGuest(
             self._handle,
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
+        
+        return await VixJob(job).wait_async()
 
-    def proc_run(self, program_name, command_line=None, should_block=True) -> Process:
+    async def proc_run(self, program_name, command_line=None, should_block=True) -> Process:
         """Executes a process in guest VM.
 
         :param str program_name: Name of program to execute in guest.
@@ -873,25 +891,25 @@ class VixVM(VixHandle):
 
         pj = _ProcJob()
 
-        job = VixJob(vix.VixVM_RunProgramInGuest(
+        job = vix.VixVM_RunProgramInGuest(
             self._handle,
-            ffi.new('char[]', _bytes(program_name, API_ENCODING)),
-            ffi.new('char[]', _bytes(command_line, API_ENCODING)) if command_line else ffi.cast('char*', 0),
+            ffi.new('char[]', bytes(program_name, API_ENCODING)),
+            ffi.new('char[]', bytes(command_line, API_ENCODING)) if command_line else ffi.cast('char*', 0),
             ffi.cast('VixRunProgramOptions', 0 if should_block else self._VIX_RUNPROGRAM_RETURN_IMMEDIATELY),
             ffi.cast('VixHandle', 0),
             ffi.cast('VixEventProc*', _callback_handler),
             ffi.cast('void*', pj.id()),
-        ))
-        pid = job.wait(VixJob.VIX_PROPERTY_JOB_RESULT_PROCESS_ID)
+        )
+        pid = await VixJob(job).wait_async(VixJob.VIX_PROPERTY_JOB_RESULT_PROCESS_ID)
 
         if should_block:
             pj.pid = pid
-            pj.wait()
+            pj.wait()  # TODO shouldmake this awaitable
             return Process(pid, pj.exit_code, pj.elapsed_time)
         else:
             return Process(pid, None, None)
 
-    def run_script(self, script_text, interpreter_path=None, should_block=True):
+    async def run_script(self, script_text, interpreter_path=None, should_block=True):
         """Executes a script in guest VM.
 
         :param str script_text: The script to execute.
@@ -904,16 +922,16 @@ class VixVM(VixHandle):
         """
 
         pj = _ProcJob()
-        job = VixJob(vix.VixVM_RunScriptInGuest(
+        job = vix.VixVM_RunScriptInGuest(
             self._handle,
-            ffi.new('char[]', _bytes(interpreter_path, API_ENCODING)) if interpreter_path else ffi.cast('char*', 0),
-            ffi.new('char[]', _bytes(script_text, API_ENCODING)),
+            ffi.new('char[]', bytes(interpreter_path, API_ENCODING)) if interpreter_path else ffi.cast('char*', 0),
+            ffi.new('char[]', bytes(script_text, API_ENCODING)),
             ffi.cast('VixRunProgramOptions', 0 if should_block else self._VIX_RUNPROGRAM_RETURN_IMMEDIATELY),
             ffi.cast('VixHandle', 0),
             ffi.cast('VixEventProc*', _callback_handler),
             ffi.cast('void*', pj.id()),
-        ))
-        pid = job.wait(VixJob.VIX_PROPERTY_JOB_RESULT_PROCESS_ID)
+        )
+        pid = await VixJob(job).wait_async(VixJob.VIX_PROPERTY_JOB_RESULT_PROCESS_ID)
 
         if should_block:
             pj.pid = pid
@@ -939,8 +957,8 @@ class VixVM(VixHandle):
         # TODO: return the path of shared folder in guest.
         return vix.VixVM_AddSharedFolder(
             self._handle,
-            ffi.new('char[]', _bytes(share_name, API_ENCODING)),
-            ffi.new('char[]', _bytes(host_path, API_ENCODING)),
+            ffi.new('char[]', bytes(share_name, API_ENCODING)),
+            ffi.new('char[]', bytes(host_path, API_ENCODING)),
             ffi.cast('VixMsgSharedFolderOptions', self._VIX_SHAREDFOLDER_WRITE_ACCESS if write_access else 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
@@ -1021,7 +1039,7 @@ class VixVM(VixHandle):
 
         return vix.VixVM_RemoveSharedFolder(
             self._handle,
-            ffi.new('char[]', _bytes(share_name, API_ENCODING)),
+            ffi.new('char[]', bytes(share_name, API_ENCODING)),
             ffi.cast('int', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
@@ -1042,8 +1060,8 @@ class VixVM(VixHandle):
 
         return vix.VixVM_SetSharedFolderState(
             self._handle,
-            ffi.new('char[]', _bytes(share_name, API_ENCODING)),
-            ffi.new('char[]', _bytes(host_path, API_ENCODING)),
+            ffi.new('char[]', bytes(share_name, API_ENCODING)),
+            ffi.new('char[]', bytes(host_path, API_ENCODING)),
             ffi.cast('VixMsgSharedFolderOptions', VixVM._VIX_SHAREDFOLDER_WRITE_ACCESS if allow_write else 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
@@ -1067,13 +1085,13 @@ class VixVM(VixHandle):
         job = VixJob(vix.VixVM_ReadVariable(
             self._handle,
             ffi.cast('int', variable_type),
-            ffi.new('char[]', _bytes(name, API_ENCODING)),
+            ffi.new('char[]', bytes(name, API_ENCODING)),
             ffi.cast('int', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         ))
 
-        return job.wait(VixJob.VIX_PROPERTY_JOB_RESULT_VM_VARIABLE_STRING)
+        return job.wait(VixJob.VIX_PROPERTY_JOB_RESULT_VM_VARIABLESTRING)
 
     @_blocking_job
     def var_write(self, name, value, variable_type=VIX_VM_GUEST_VARIABLE):
@@ -1091,8 +1109,8 @@ class VixVM(VixHandle):
         return vix.VixVM_WriteVariable(
             self._handle,
             ffi.cast('int', variable_type),
-            ffi.new('char[]', _bytes(name, API_ENCODING)),
-            ffi.new('char[]', _bytes(value, API_ENCODING)),
+            ffi.new('char[]', bytes(name, API_ENCODING)),
+            ffi.new('char[]', bytes(value, API_ENCODING)),
             ffi.cast('int', 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
@@ -1115,8 +1133,7 @@ class VixVM(VixHandle):
             ffi.cast('void*', 0),
         )
 
-    @_blocking_job
-    def vm_delete(self, delete_files=False):
+    async def vm_delete(self, delete_files=False):
         """Deletes VM from host.
 
         :param bool delete_files: True to delete associated files from disk, otherwise False.
@@ -1124,12 +1141,14 @@ class VixVM(VixHandle):
         :raises vix.VixError: If failed to delete VM.
         """
 
-        return vix.VixVM_Delete(
+        job = vix.VixVM_Delete(
             self._handle,
             ffi.cast('VixVMDeleteOptions', self._VIX_VMDELETE_DISK_FILES if delete_files else 0),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
+
+        await VixJob(job).wait_async()
 
     def capture_screen_image(self, filename=None):
         """Captures a PNG screenshot from VM.
@@ -1167,7 +1186,7 @@ class VixVM(VixHandle):
             raise VixError(error_code)
 
         img_len = int(bytes_ptr[0])
-        img_data = _bytes(ffi.buffer(data_ptr[0], img_len))
+        img_data = bytes(ffi.buffer(data_ptr[0], img_len))
 
         vix.Vix_FreeBuffer(data_ptr[0])
 
@@ -1178,8 +1197,7 @@ class VixVM(VixHandle):
             return img_data
 
     # VMware tools
-    @_blocking_job
-    def wait_for_tools(self, timeout=0):
+    async def wait_for_tools(self, timeout=0):
         """Waits for VMware tools to start in guest.
 
         :param int timeout: Timeout in seconds. Zero or negative will block forever, Raises an exception if timeout expired.
@@ -1187,12 +1205,14 @@ class VixVM(VixHandle):
         :raises vix.VixError: If timeout passed, Or of VIX fails.
         """
 
-        return vix.VixVM_WaitForToolsInGuest(
+        job = vix.VixVM_WaitForToolsInGuest(
             self._handle,
             ffi.cast('int', timeout),
             ffi.cast('VixEventProc*', 0),
             ffi.cast('void*', 0),
         )
+        await VixJob(job).wait_async()
+
 
     @_blocking_job
     def install_tools(self, auto_upgrade=False, blocking=True):

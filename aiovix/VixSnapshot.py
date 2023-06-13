@@ -1,6 +1,6 @@
 from .VixHandle import VixHandle
 from .VixError import VixError
-from vix import _backend
+from aiovix import _backend
 vix = _backend._vix
 ffi = _backend._ffi
 

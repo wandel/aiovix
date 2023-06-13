@@ -1,10 +1,9 @@
-from __future__ import absolute_import
+import asyncio
+import datetime
 
-from .compat import _bytes, _str
 from .VixHandle import VixHandle
 from .VixError import VixError
-from vix import _backend, API_ENCODING
-import datetime
+from aiovix import _backend, API_ENCODING
 
 vix = _backend._vix
 ffi = _backend._ffi
@@ -34,7 +33,7 @@ class VixJob(VixHandle):
     VIX_PROPERTY_JOB_RESULT_PROCESS_COMMAND = 3053
     VIX_PROPERTY_JOB_RESULT_FILE_FLAGS = 3054
     VIX_PROPERTY_JOB_RESULT_PROCESS_START_TIME = 3055
-    VIX_PROPERTY_JOB_RESULT_VM_VARIABLE_STRING = 3056
+    VIX_PROPERTY_JOB_RESULT_VM_VARIABLESTRING = 3056
     VIX_PROPERTY_JOB_RESULT_PROCESS_BEING_DEBUGGED = 3057
     VIX_PROPERTY_JOB_RESULT_SCREEN_IMAGE_SIZE = 3058
     VIX_PROPERTY_JOB_RESULT_SCREEN_IMAGE_DATA = 3059
@@ -47,7 +46,7 @@ class VixJob(VixHandle):
 
     STR_RESULT_TYPES = (
         VIX_PROPERTY_JOB_RESULT_ITEM_NAME,
-        VIX_PROPERTY_JOB_RESULT_VM_VARIABLE_STRING,
+        VIX_PROPERTY_JOB_RESULT_VM_VARIABLESTRING,
         VIX_PROPERTY_JOB_RESULT_COMMAND_OUTPUT,
         VIX_PROPERTY_JOB_RESULT_PROCESS_OWNER,
         VIX_PROPERTY_JOB_RESULT_PROCESS_COMMAND,
@@ -61,7 +60,7 @@ class VixJob(VixHandle):
     def wait(self, *args):
         """Waits for the job to complete and gets requested results.
 
-        :param \*args: A list of properties to retreive (VIX_PROPERTY_JOB_RESULT_*).
+        :param args: A list of properties to retreive (VIX_PROPERTY_JOB_RESULT_*).
 
         :returns: A tuple of results if more than one object was requested.
 
@@ -96,7 +95,55 @@ class VixJob(VixHandle):
                 break
             val = ret_data[i]
             if args[i] in self.STR_RESULT_TYPES:
-                result.append(_str(ffi.string(val[0]), API_ENCODING))
+                result.append(str(ffi.string(val[0]), API_ENCODING))
+                vix.Vix_FreeBuffer(val[0])
+            else:
+                result.append(val[0])
+
+        return result[0] if len(result) == 1 else result
+
+    async def wait_async(self, *args):
+        """Waits for the job to complete and gets requested results.
+
+        :param args: A list of properties to retreive (VIX_PROPERTY_JOB_RESULT_*).
+
+        :returns: A tuple of results if more than one object was requested.
+
+        :raises vix.VixError: If job failed.
+        """
+
+        c_args = list()
+        ret_data = list()
+
+        for arg in args:
+            c_args.append(ffi.cast('VixPropertyType', arg))
+
+            # TODO: Check the arg type and allocate accordingly...
+            alloc = None
+            if arg in self.STR_RESULT_TYPES:
+                alloc = ffi.new('char**')
+            else:
+                alloc = ffi.new('int*')
+            ret_data.append(alloc)
+            c_args.append(alloc)
+
+        c_args.append(ffi.cast('VixPropertyType', self.VIX_PROPERTY_NONE))
+
+        while not self.is_done():
+            await asyncio.sleep(0.1)
+
+        error_code = vix.VixJob_Wait(self._handle, *c_args)
+        if error_code != VixError.VIX_OK:
+            raise VixError(error_code)
+
+        # deref data...
+        result = list()
+        for i in range(len(args)):
+            if args[i] == self.VIX_PROPERTY_NONE:
+                break
+            val = ret_data[i]
+            if args[i] in self.STR_RESULT_TYPES:
+                result.append(str(ffi.string(val[0]), API_ENCODING))
                 vix.Vix_FreeBuffer(val[0])
             else:
                 result.append(val[0])
@@ -169,7 +216,7 @@ class VixJob(VixHandle):
 
             value = None
             if prop_id in self.STR_RESULT_TYPES:
-                value = _str(ffi.string(prop_val[0]), API_ENCODING)
+                value = str(ffi.string(prop_val[0]), API_ENCODING)
                 vix.Vix_FreeBuffer(prop_val[0])
             elif prop_id == self.VIX_PROPERTY_JOB_RESULT_PROCESS_BEING_DEBUGGED:
                 value = bool(ffi.cast('Bool', prop_val[0]))
@@ -185,7 +232,7 @@ class VixJob(VixHandle):
     def get_properties(self, *args):
         """Get properties of a job result
 
-        :param \*args: properties to fetch.
+        :param args: properties to fetch.
 
         :returns: A list of tuples of requests properties.
         :rtype: list
